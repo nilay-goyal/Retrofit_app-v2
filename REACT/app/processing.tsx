@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: Colors.light.coral,
+    backgroundColor: Colors.light.coral, // Now uses #a30e0e
     borderRadius: 6,
   },
   progressText: {
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
   currentStep: {
     fontSize: 18,
     fontWeight: '600',
-    color: Colors.light.coral,
+    color: Colors.light.coral, // Now uses #a30e0e
     textAlign: 'center',
     marginBottom: 20,
   },

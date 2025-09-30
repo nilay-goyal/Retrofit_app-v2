@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
   faqQuestion: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.light.coral,
+    color: Colors.light.coral, // Now uses #a30e0e
     marginBottom: 8,
   },
   faqAnswer: {
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   emergencyButton: {
-    backgroundColor: Colors.light.coral,
+    backgroundColor: Colors.light.coral, // Now uses #a30e0e
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',

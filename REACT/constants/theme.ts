@@ -6,11 +6,11 @@
 import { Platform } from 'react-native';
 
 // Kidney Health App Brand Colors
-const coral = '#FF6B6B';      // Primary brand color
-const sunshine = '#FFD93D';   // Accent color
-const cream = '#FFF8E7';      // Background
-const gentleBlue = '#74C0FC'; // Secondary
-const sageGreen = '#51CF66';  // Success
+const coral = '#a30e0e';      // Primary brand color (updated to medical red)
+const sunshine = '#FFD93D';   // Accent color (unchanged)
+const cream = '#FFF8E7';      // Background (unchanged)
+const gentleBlue = '#74C0FC'; // Secondary (unchanged)
+const sageGreen = '#51CF66';  // Success (unchanged)
 const tintColorLight = coral;
 const tintColorDark = '#fff';
 

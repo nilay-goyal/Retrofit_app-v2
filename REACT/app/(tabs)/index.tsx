@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: Colors.light.coral,
+    color: Colors.light.coral, // Now uses #a30e0e
     marginBottom: 4,
   },
   statLabel: {

@@ -18,7 +18,6 @@ import Animated, {
   withTiming, 
   withSpring 
 } from 'react-native-reanimated';
-import BennyMascot from '@/components/benny-mascot';
 import LargeButton from '@/components/large-button';
 import { Colors } from '@/constants/theme';
 
@@ -154,14 +153,8 @@ export default function CameraPage() {
 
             {/* Instructions */}
             <View style={styles.instructionsContainer}>
-              <BennyMascot 
-                expression="encouraging" 
-                size="small" 
-                message="Line up your test strip!" 
-                showMessage={true} 
-              />
               <Text style={styles.instructionsText}>
-                Place your test strip inside the frame and tap the button to capture
+                Line up your test strip inside the frame and tap the button to capture
               </Text>
             </View>
 
@@ -266,13 +259,14 @@ const styles = StyleSheet.create({
   },
   instructionsText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 20,
+    fontWeight: '600',
     textAlign: 'center',
-    marginTop: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: 16,
+    lineHeight: 28,
   },
   frameContainer: {
     flex: 1,
@@ -296,7 +290,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 40,
     height: 40,
-    borderColor: Colors.light.coral,
+    borderColor: Colors.light.coral, // Now uses #a30e0e
     borderWidth: 4,
   },
   topLeft: {
@@ -343,7 +337,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   captureButton: {
-    backgroundColor: Colors.light.coral,
+    backgroundColor: Colors.light.coral, // Now uses #a30e0e
     width: 80,
     height: 80,
     borderRadius: 40,

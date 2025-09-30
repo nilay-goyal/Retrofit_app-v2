@@ -1,0 +1,56 @@
+<svg width="300" height="200" viewBox="0 0 300 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle for the kidney icon -->
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#a30e0e" stroke-width="2" opacity="0.1"/>
+  
+  <!-- Outer segmented arc -->
+  <path d="M 20 100 A 80 80 0 1 1 180 100" 
+        fill="none" 
+        stroke="#a30e0e" 
+        stroke-width="8" 
+        stroke-linecap="round"
+        stroke-dasharray="20 10"/>
+  
+  <!-- Inner segmented arc -->
+  <path d="M 30 100 A 70 70 0 1 1 170 100" 
+        fill="none" 
+        stroke="#f38282" 
+        stroke-width="6" 
+        stroke-linecap="round"
+        stroke-dasharray="15 8"/>
+  
+  <!-- Kidney shape -->
+  <path d="M 85 60 
+           C 60 60, 50 80, 55 100
+           C 50 120, 60 140, 85 140
+           C 110 140, 120 120, 115 100
+           C 120 80, 110 60, 85 60 Z" 
+        fill="#a30e0e"/>
+  
+  <!-- Internal kidney structures (3 oval shapes) -->
+  <ellipse cx="85" cy="85" rx="8" ry="15" fill="#f38282"/>
+  <ellipse cx="85" cy="100" rx="8" ry="15" fill="#f38282"/>
+  <ellipse cx="85" cy="115" rx="8" ry="15" fill="#f38282"/>
+  
+  <!-- Arrow pointing clockwise -->
+  <path d="M 170 85 L 180 100 L 170 115" 
+        stroke="#f38282" 
+        stroke-width="4" 
+        stroke-linecap="round" 
+        fill="none"/>
+  
+  <!-- Bottom right progress indicators -->
+  <rect x="140" y="140" width="3" height="15" fill="#f38282"/>
+  <rect x="145" y="140" width="3" height="15" fill="#f38282"/>
+  <rect x="150" y="140" width="3" height="15" fill="#f38282"/>
+  <rect x="155" y="140" width="3" height="15" fill="#f38282"/>
+  <rect x="160" y="140" width="3" height="15" fill="#f38282"/>
+  
+  <!-- REACT Text -->
+  <text x="220" y="120" 
+        font-family="Arial, sans-serif" 
+        font-size="48" 
+        font-weight="bold" 
+        fill="#a30e0e" 
+        text-anchor="start" 
+        dominant-baseline="middle">REACT</text>
+</svg>

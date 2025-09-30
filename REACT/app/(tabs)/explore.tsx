@@ -87,7 +87,7 @@ export default function History() {
     switch (status) {
       case 'great': return Colors.light.sageGreen;
       case 'keep_watching': return Colors.light.sunshine;
-      case 'call_doctor': return Colors.light.coral;
+      case 'call_doctor': return Colors.light.coral; // Now uses #a30e0e
       default: return Colors.light.gray[600];
     }
   };

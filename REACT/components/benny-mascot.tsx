@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -46,7 +46,7 @@ export default function BennyMascot({
 
   const expressions = {
     happy: '😊',
-    encouraging: '👍',
+    encouraging: 'kidney', // Will use kidney logo instead of thumbs up
     thinking: '🤔',
     celebrating: '🎉',
     waving: '👋'
@@ -69,12 +69,14 @@ export default function BennyMascot({
           }
         ]}>
           <View style={styles.kidneyBean}>
-            <Text style={[
-              styles.face, 
-              { fontSize: sizes[size].fontSize * 0.4 }
-            ]}>
-              {expressions[expression]}
-            </Text>
+            <Image 
+              source={require('@/assets/images/transparent-logo.png')}
+              style={{
+                width: sizes[size].container * 0.7, // Much bigger - fills most of circle
+                height: sizes[size].container * 0.7,
+                resizeMode: 'contain'
+              }}
+            />
           </View>
           <View style={styles.stethoscope} />
         </View>
@@ -112,7 +114,7 @@ const styles = StyleSheet.create({
     width: '80%',
     height: '80%',
     borderRadius: 40,
-    backgroundColor: '#FF8E8E',
+    backgroundColor: '#f38282', // Updated to soft red
     alignItems: 'center',
     justifyContent: 'center',
     transform: [{ rotate: '-12deg' }],

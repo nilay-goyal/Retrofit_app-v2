@@ -54,7 +54,7 @@ export default function LargeButton({
     switch (variant) {
       case 'primary':
         return { 
-          backgroundColor: Colors.light.coral,
+          backgroundColor: Colors.light.coral, // Now uses #a30e0e
           borderWidth: 0,
         };
       case 'success':
@@ -107,7 +107,7 @@ export default function LargeButton({
 
   const getTextColor = () => {
     if (variant === 'outline') {
-      return Colors.light.coral;
+      return Colors.light.coral; // Now uses #a30e0e
     }
     return '#FFFFFF';
   };
