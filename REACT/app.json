@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "REACT",
-    "slug": "REACT",
+    "name": "Retrofit",
+    "slug": "retrofit",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "react",
+    "scheme": "retrofit",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -33,12 +33,13 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-        "backgroundColor": "#F8F9FA",
-        "dark": {
-          "backgroundColor": "#a30e0e"
+          "backgroundColor": "#F8F9FA",
+          "dark": {
+            "backgroundColor": "#7cd35c"
+          }
         }
-        }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

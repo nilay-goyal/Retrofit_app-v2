@@ -1,82 +1,82 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import { View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].coral, // Now uses #a30e0e
-        tabBarInactiveTintColor: Colors[colorScheme ?? 'light'].gray[600],
+        tabBarActiveTintColor: '#7cd35c',
+        tabBarInactiveTintColor: '#2D3748',
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
-          borderTopWidth: 2,
-          borderTopColor: Colors[colorScheme ?? 'light'].sunshine,
-          paddingTop: 8,
-          paddingBottom: 8,
-          height: 80,
+          borderTopWidth: 1,
+          borderTopColor: '#E5E7EB',
+          paddingTop: 4,
+          paddingBottom: 6,
+          height: 56,
         },
         tabBarLabelStyle: {
-          fontSize: 14,
+          fontSize: 11,
           fontWeight: '600',
-          marginTop: 4,
+          marginTop: 0,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 0,
         },
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: 'Dashboard',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons 
               name={focused ? 'home' : 'home-outline'} 
-              size={24} 
+              size={22} 
               color={color} 
             />
           ),
         }}
       />
       <Tabs.Screen
-        name="camera"
+        name="new-quote"
         options={{
-          title: 'Test',
+          title: 'New Quote',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons 
-              name={focused ? 'camera' : 'camera-outline'} 
-              size={24} 
+              name={focused ? 'add-circle' : 'add-circle-outline'} 
+              size={22} 
               color={color} 
             />
           ),
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="quotes"
         options={{
-          title: 'History',
+          title: 'Quotes',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons 
-              name={focused ? 'time' : 'time-outline'} 
-              size={24} 
+              name={focused ? 'document-text' : 'document-text-outline'} 
+              size={22} 
               color={color} 
             />
           ),
         }}
       />
       <Tabs.Screen
-        name="help"
+        name="settings"
         options={{
-          title: 'Help',
+          title: 'Settings',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons 
-              name={focused ? 'help-circle' : 'help-circle-outline'} 
-              size={24} 
+              name={focused ? 'settings' : 'settings-outline'} 
+              size={22} 
               color={color} 
             />
           ),

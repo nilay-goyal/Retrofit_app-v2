@@ -1,200 +1,423 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, SafeAreaView } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { router } from 'expo-router';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withTiming, 
-  withSpring 
-} from 'react-native-reanimated';
-import BennyMascot from '@/components/benny-mascot';
-import LargeButton from '@/components/large-button';
-import { Colors } from '@/constants/theme';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '@/hooks/useAuth';
+import { useQuotes } from '@/hooks/useQuotes';
 
 export default function Dashboard() {
-  const opacity = useSharedValue(0);
-  const translateY = useSharedValue(30);
+  const router = useRouter();
+  const { user } = useAuth();
+  const { quotes, loading } = useQuotes();
 
-  React.useEffect(() => {
-    opacity.value = withTiming(1, { duration: 800 });
-    translateY.value = withSpring(0, { damping: 15 });
-  }, []);
+  const totalQuotes = quotes.length;
+  const pendingQuotes = quotes.filter(q => q.status === 'draft' || q.status === 'sent').length;
+  const approvedRevenue = quotes
+    .filter(q => q.status === 'approved')
+    .reduce((sum, q) => sum + (q.amount || 0), 0);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
-  }));
+  // Get user profile info
+  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || '';
+  const companyName = 'Retrofit Insulation'; // TODO: Get from profile
 
-  const handleTakeTest = () => {
-    router.push('/camera');
-  };
-
-  const handleViewHistory = () => {
-    router.push('/(tabs)/explore');
-  };
+  if (loading) {
+    return (
+      <SafeAreaView edges={['top','bottom']} style={[{ backgroundColor: '#7cd35c' }, styles.container]}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#FFFFFF" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <Animated.View style={[styles.content, animatedStyle]}>
-          <BennyMascot 
-            expression="happy" 
-            size="large" 
-            message="Ready for your next test?" 
-            showMessage={true} 
+    <SafeAreaView edges={['top','bottom']} style={[{ backgroundColor: '#7cd35c' }, styles.container]}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        style={{ flex: 1, backgroundColor: '#7cd35c' }}
+        contentInsetAdjustmentBehavior="never"
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.welcomeText}>
+              Welcome back{userName ? `, ${userName.split(' ')[0]}` : ''}
+            </Text>
+            <Text style={styles.companyText}>
+              {companyName}
+            </Text>
+          </View>
+        </View>
+
+        {/* Quick Stats */}
+        <View style={styles.statsContainer}>
+          <StatsCard
+            icon="document-text"
+            value={totalQuotes}
+            label="Total Quotes"
+            color="#7cd35c"
           />
-          
-          <Text style={styles.title}>Your Kidney Health</Text>
-          <Text style={styles.subtitle}>
-            Stay on top of your health with regular testing
-          </Text>
+          <StatsCard
+            icon="time"
+            value={pendingQuotes}
+            label="Pending"
+            color="#FF8C42"
+          />
+          <StatsCard
+            icon="cash"
+            value={`$${(approvedRevenue / 1000).toFixed(1)}k`}
+            label="Revenue"
+            color="#7cd35c"
+          />
+        </View>
 
-          <View style={styles.statsContainer}>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>5</Text>
-              <Text style={styles.statLabel}>Tests This Month</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>Good</Text>
-              <Text style={styles.statLabel}>Last Result</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>3</Text>
-              <Text style={styles.statLabel}>Days Since Last Test</Text>
-            </View>
+        {/* Recent Quotes */}
+        <View style={styles.quotesSection}>
+          <View style={styles.quotesSectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Quotes</Text>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/quotes')}>
+              <View style={styles.viewAllButton}>
+                <Text style={styles.viewAllText}>View All</Text>
+            <Ionicons name="chevron-forward" size={16} color="#7cd35c" />
+              </View>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.quickActions}>
-            <LargeButton 
-              onPress={handleTakeTest} 
-              variant="primary" 
-              size="huge" 
-              icon="📷"
-            >
-              Take New Test
-            </LargeButton>
-            
-            <LargeButton 
-              onPress={handleViewHistory} 
-              variant="outline" 
-              size="large" 
-              icon="📊"
-            >
-              View History
-            </LargeButton>
+          <View style={styles.quotesListContainer}>
+            {quotes.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="document-text-outline" size={48} color="#D1D5DB" />
+                <Text style={styles.emptyStateText}>No quotes yet</Text>
+                <TouchableOpacity
+                  style={styles.createFirstButton}
+                  onPress={() => router.push('/(tabs)/new-quote')}
+                >
+                  <Text style={styles.createFirstButtonText}>Create Your First Quote</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              quotes.slice(0, 3).map(quote => (
+                <QuoteCard key={quote.id} quote={quote} />
+              ))
+            )}
           </View>
+        </View>
 
-          <View style={styles.tipsContainer}>
-            <Text style={styles.tipsTitle}>💡 Health Tips</Text>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>
-                Drink plenty of water throughout the day to keep your kidneys healthy.
-              </Text>
-            </View>
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>
-                Regular testing helps catch any changes early.
-              </Text>
-            </View>
-          </View>
-        </Animated.View>
+        
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function StatsCard({ icon, value, label, color }: { icon: string; value: string | number; label: string; color: string }) {
+  return (
+    <View style={styles.statsCard}>
+      <View style={[styles.iconContainer, { backgroundColor: `${color}15` }]}>
+        <Ionicons name={icon as any} size={20} color={color} />
+      </View>
+      <Text style={styles.statsValue}>{value}</Text>
+      <Text style={styles.statsLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function QuoteCard({ quote }: { quote: any }) {
+  const router = useRouter();
+
+  const statusColors = {
+    draft: { bg: '#F3F4F6', text: '#6B7280', label: 'Draft' },
+    sent: { bg: '#DBEAFE', text: '#2563EB', label: 'Sent' },
+    approved: { bg: '#D1FAE5', text: '#059669', label: 'Approved' },
+  };
+
+  const status = statusColors[quote.status?.toLowerCase() as keyof typeof statusColors] || statusColors.draft;
+
+  return (
+    <TouchableOpacity
+      style={styles.quoteCard}
+      onPress={() => {
+        // Navigate to quote details when implemented
+        console.log('Navigate to quote details:', quote.id);
+      }}
+      activeOpacity={0.7}
+    >
+      <View style={styles.cardHeader}>
+        <View style={styles.cardInfo}>
+          <Text style={styles.projectName} numberOfLines={1}>
+            {quote.project_name || quote.client_name}
+          </Text>
+          <View style={styles.clientRow}>
+            <Ionicons name="person-outline" size={16} color="#6B7280" />
+            <Text style={styles.clientText} numberOfLines={1}>
+              {quote.client_name}
+            </Text>
+          </View>
+          {quote.address && (
+            <View style={styles.addressRow}>
+              <Ionicons name="location-outline" size={16} color="#6B7280" />
+              <Text style={styles.addressText} numberOfLines={1}>
+                {quote.address}
+              </Text>
+            </View>
+          )}
+        </View>
+        <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
+          <Text style={[styles.statusText, { color: status.text }]}>
+            {status.label}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.cardFooter}>
+        <View style={styles.dateRow}>
+          <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+          <Text style={styles.dateText}>
+            {quote.created_at ? new Date(quote.created_at).toLocaleDateString('en-US', { 
+              month: 'short', 
+              day: 'numeric', 
+              year: 'numeric' 
+            }) : 'Unknown'}
+          </Text>
+        </View>
+        <Text style={styles.totalAmount}>
+          ${quote.amount?.toLocaleString() || '0'}
+        </Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light.cream,
+    backgroundColor: '#7cd35c',
   },
-  scrollView: {
-    flex: 1,
+  scrollContent: {
+    paddingBottom: 20,
+    paddingTop: 0,
+    backgroundColor: '#F9FAFB',
   },
-  content: {
-    flex: 1,
+  header: {
+    backgroundColor: '#7cd35c',
+    paddingHorizontal: 20,
+    paddingTop: 0,
+    paddingBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 20,
+    marginTop: 0,
   },
-  title: {
-    fontSize: 28,
+  welcomeText: {
+    fontSize: 24,
     fontWeight: 'bold',
-    color: Colors.light.gray[800],
-    textAlign: 'center',
-    marginBottom: 12,
-    marginTop: 24,
+    color: '#FFFFFF',
+    marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 18,
-    color: Colors.light.gray[600],
-    textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 24,
+  companyText: {
+    fontSize: 14,
+    color: '#A7F3D0',
+  },
+  companyLogo: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
   },
   statsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 32,
-    gap: 12,
+    paddingHorizontal: 20,
+    marginTop: -12,
+    marginBottom: 20,
+    gap: 10,
   },
-  statCard: {
+  statsCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: Colors.light.sunshine,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.light.coral, // Now uses #a30e0e
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: Colors.light.gray[600],
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  quickActions: {
-    width: '100%',
-    gap: 16,
-    marginBottom: 32,
-  },
-  tipsContainer: {
-    width: '100%',
-    marginBottom: 32,
-  },
-  tipsTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: Colors.light.gray[800],
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  tipCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.gentleBlue,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  tipText: {
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  statsValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2D3748',
+    marginBottom: 4,
+  },
+  statsLabel: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  quotesSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  quotesSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2D3748',
+  },
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  viewAllText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#7cd35c',
+    marginRight: 4,
+  },
+  quotesListContainer: {
+    gap: 12,
+  },
+  emptyState: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  emptyStateText: {
     fontSize: 16,
-    color: Colors.light.gray[800],
-    lineHeight: 22,
-    textAlign: 'center',
+    color: '#9CA3AF',
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  createFirstButton: {
+    backgroundColor: '#7cd35c',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  createFirstButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  quoteCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  cardInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  projectName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2D3748',
+    marginBottom: 4,
+  },
+  clientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  clientText: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginLeft: 4,
+  },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  addressText: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginLeft: 4,
+    flex: 1,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dateText: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginLeft: 4,
+  },
+  totalAmount: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#7cd35c',
+  },
+  missionCard: {
+    // removed
+  },
+  missionText: {
+    // removed
+  },
+  missionBold: {
+    // removed
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
