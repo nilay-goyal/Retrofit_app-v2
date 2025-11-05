@@ -14,7 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { useQuotes } from '@/hooks/useQuotes';
+import { useSettings } from '@/hooks/useSettings';
 
 export default function CreateQuote() {
   const router = useRouter();
@@ -29,18 +32,23 @@ export default function CreateQuote() {
     postal_code: '',
     project_name: '',
     photos: [] as any[],
-    measurements: [] as Array<{ room: string; length: number; width: number }>,
-    material_name: '',
-    material_cost_per_sqft: 0,
-    labor_cost_per_sqft: 2.5,
-    additional_costs: [] as Array<{ name: string; amount: number }>,
+    items: [] as Array<{
+      type: 'Room' | 'Labor' | 'Material' | 'Service' | 'Custom';
+      name: string;
+      length?: number;
+      width?: number;
+      quantity?: number;
+      calculatedArea?: number;
+      price?: number;
+      priceOption?: string;
+    }>,
     notes: '',
   });
 
   const steps = [
     { number: 1, label: 'Details' },
     { number: 2, label: 'Photos' },
-    { number: 3, label: 'Measurements' },
+    { number: 3, label: 'Items' },
     { number: 4, label: 'Costs' },
     { number: 5, label: 'Summary' },
   ];
@@ -53,17 +61,17 @@ export default function CreateQuote() {
   };
 
   const handleSave = async () => {
-    // Calculate totals
-    const totalSquareFootage = quoteData.measurements.reduce((sum, m) => {
-      return sum + (m.length * m.width);
+    // Calculate totals from items
+    const totalCost = quoteData.items.reduce((sum, item) => {
+      return sum + (item.price || 0);
     }, 0);
 
-    const materialCost = totalSquareFootage * (quoteData.material_cost_per_sqft || 0);
-    const laborCost = totalSquareFootage * (quoteData.labor_cost_per_sqft || 0);
-    const additionalCostsTotal = quoteData.additional_costs.reduce((sum, cost) => sum + (cost.amount || 0), 0);
-    const subtotal = materialCost + laborCost + additionalCostsTotal;
-    const rebateAmount = quoteData.postal_code ? subtotal * 0.15 : 0; // 15% rebate mock
-    const finalTotal = subtotal - rebateAmount;
+    const totalSquareFootage = quoteData.items
+      .filter(item => item.type === 'Room')
+      .reduce((sum, item) => sum + (item.calculatedArea || 0), 0);
+
+    const rebateAmount = quoteData.postal_code ? totalCost * 0.15 : 0; // 15% rebate mock
+    const finalTotal = totalCost - rebateAmount;
 
     setSaving(true);
     try {
@@ -74,8 +82,8 @@ export default function CreateQuote() {
         project_name: quoteData.project_name || quoteData.client_name,
         address: quoteData.project_address || undefined,
         square_footage: totalSquareFootage,
-        material_cost: materialCost,
-        labor_cost: laborCost,
+        material_cost: 0, // Will be calculated from items
+        labor_cost: 0, // Will be calculated from items
         rebate_amount: rebateAmount,
         amount: finalTotal,
         status: 'draft',
@@ -135,7 +143,7 @@ export default function CreateQuote() {
           <StepPhotos data={quoteData} onNext={handleNext} />
         )}
         {currentStep === 3 && (
-          <StepMeasurements data={quoteData} onNext={handleNext} />
+          <StepItems data={quoteData} onNext={handleNext} />
         )}
         {currentStep === 4 && (
           <StepCosts data={quoteData} onNext={handleNext} />
@@ -394,7 +402,11 @@ function StepPhotos({ data, onNext }: { data: any; onNext: (data: any) => void }
   };
 
   return (
-    <ScrollView style={styles.stepContainer} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      style={styles.scrollView}
+      contentContainerStyle={styles.stepContainer}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.section}>
         <Text style={styles.title}>Upload Photos</Text>
         <Text style={styles.subtitle}>
@@ -456,62 +468,559 @@ function StepPhotos({ data, onNext }: { data: any; onNext: (data: any) => void }
         onPress={handleNext}
         disabled={photos.length === 0}
       >
-        <Text style={styles.nextButtonText}>Next: Add Measurements</Text>
+        <Text style={styles.nextButtonText}>Next: List Items</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 }
 
-function StepMeasurements({ data, onNext }: { data: any; onNext: (data: any) => void }) {
+function StepItems({ data, onNext }: { data: any; onNext: (data: any) => void }) {
+  const [items, setItems] = useState<Array<{
+    type: 'Room' | 'Labor' | 'Material' | 'Service' | 'Custom';
+    name: string;
+    length?: number;
+    width?: number;
+    quantity?: number;
+    calculatedArea?: number;
+  }>>(data.items || []);
+
+  const [errors, setErrors] = useState<Record<number, string>>({});
+  const [expandedItemTypeDropdowns, setExpandedItemTypeDropdowns] = useState<Record<number, boolean>>({});
+
+  // Initialize with one item if empty
+  React.useEffect(() => {
+    if (items.length === 0) {
+      setItems([{
+        type: 'Room',
+        name: '',
+      }]);
+    }
+  }, []);
+
+  const addItem = () => {
+    setItems([...items, {
+      type: 'Room',
+      name: '',
+    }]);
+  };
+
+  const updateItem = (index: number, field: string, value: any) => {
+    const updated = [...items];
+    updated[index] = { ...updated[index], [field]: value };
+    
+    // Calculate area for Room type
+    if (field === 'length' || field === 'width' || field === 'type') {
+      if (updated[index].type === 'Room' && updated[index].length && updated[index].width) {
+        updated[index].calculatedArea = updated[index].length * updated[index].width;
+      } else if (updated[index].type !== 'Room') {
+        updated[index].calculatedArea = undefined;
+      }
+    }
+    
+    setItems(updated);
+    // Clear error for this field
+    if (errors[index]) {
+      const newErrors = { ...errors };
+      delete newErrors[index];
+      setErrors(newErrors);
+    }
+  };
+
+  const removeItem = (index: number) => {
+    setItems(items.filter((_, i) => i !== index));
+    const newErrors = { ...errors };
+    delete newErrors[index];
+    setErrors(newErrors);
+  };
+
+  const validate = () => {
+    const newErrors: Record<number, string> = {};
+    
+    items.forEach((item, index) => {
+      if (!item.name.trim()) {
+        newErrors[index] = 'Name is required';
+        return;
+      }
+      
+      if (item.type === 'Room') {
+        if (!item.length || item.length <= 0) {
+          newErrors[index] = 'Length is required';
+          return;
+        }
+        if (!item.width || item.width <= 0) {
+          newErrors[index] = 'Width is required';
+          return;
+        }
+      } else if (item.type === 'Labor' || item.type === 'Material') {
+        if (!item.quantity || item.quantity <= 0) {
+          newErrors[index] = 'Quantity is required';
+          return;
+        }
+      }
+    });
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleNext = () => {
+    if (!validate()) {
+      Alert.alert('Validation Error', 'Please fill in all required fields for each item.');
+      return;
+    }
+    onNext({ items });
+  };
+
+  const renderItemFields = (item: any, index: number) => {
+    const showLengthWidth = item.type === 'Room' || item.type === 'Custom';
+    const showQuantity = item.type === 'Labor' || item.type === 'Material' || item.type === 'Custom';
+    const showAll = item.type === 'Custom';
+
+    return (
+      <View key={index} style={styles.itemCard}>
+        <View style={styles.itemHeader}>
+          <Text style={styles.itemNumber}>Item {index + 1}</Text>
+          {items.length > 1 && (
+            <TouchableOpacity onPress={() => removeItem(index)}>
+              <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Item Type</Text>
+          <TouchableOpacity
+            style={styles.dropdown}
+            onPress={() => setExpandedItemTypeDropdowns({
+              ...expandedItemTypeDropdowns,
+              [index]: !expandedItemTypeDropdowns[index]
+            })}
+          >
+            <Text style={styles.dropdownText}>
+              {item.type || 'Select type'}
+            </Text>
+            <Ionicons 
+              name={expandedItemTypeDropdowns[index] ? "chevron-up" : "chevron-down"} 
+              size={20} 
+              color="#6B7280" 
+            />
+          </TouchableOpacity>
+          {expandedItemTypeDropdowns[index] && (
+            <View style={styles.dropdownOptions}>
+              {['Room', 'Labor', 'Material', 'Service', 'Custom'].map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    styles.dropdownOption,
+                    item.type === type && styles.dropdownOptionSelected
+                  ]}
+                  onPress={() => {
+                    updateItem(index, 'type', type);
+                    setExpandedItemTypeDropdowns({ ...expandedItemTypeDropdowns, [index]: false });
+                  }}
+                >
+                  <Text style={styles.dropdownOptionText}>{type}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>
+            Name <Text style={styles.required}>*</Text>
+          </Text>
+          <TextInput
+            style={[styles.input, errors[index]?.includes('Name') && styles.inputError]}
+            value={item.name}
+            onChangeText={(text) => updateItem(index, 'name', text)}
+            placeholder="e.g., Attic Insulation"
+            placeholderTextColor="#9CA3AF"
+          />
+        </View>
+
+        {(showLengthWidth || showAll) && (
+          <View style={styles.dimensionsRow}>
+            <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+              <Text style={styles.label}>
+                Length (ft) {item.type === 'Room' && <Text style={styles.required}>*</Text>}
+              </Text>
+              <TextInput
+                style={[styles.input, errors[index]?.includes('Length') && styles.inputError]}
+                value={item.length?.toString() || ''}
+                onChangeText={(text) => updateItem(index, 'length', parseFloat(text) || 0)}
+                placeholder="0"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+              <Text style={styles.label}>
+                Width (ft) {item.type === 'Room' && <Text style={styles.required}>*</Text>}
+              </Text>
+              <TextInput
+                style={[styles.input, errors[index]?.includes('Width') && styles.inputError]}
+                value={item.width?.toString() || ''}
+                onChangeText={(text) => updateItem(index, 'width', parseFloat(text) || 0)}
+                placeholder="0"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="decimal-pad"
+              />
+            </View>
+          </View>
+        )}
+
+        {(showQuantity || showAll) && (
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>
+              Quantity {(item.type === 'Labor' || item.type === 'Material') && <Text style={styles.required}>*</Text>}
+            </Text>
+            <TextInput
+              style={[styles.input, errors[index]?.includes('Quantity') && styles.inputError]}
+              value={item.quantity?.toString() || ''}
+              onChangeText={(text) => updateItem(index, 'quantity', parseFloat(text) || 0)}
+              placeholder="0"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="decimal-pad"
+            />
+          </View>
+        )}
+
+        {item.type === 'Room' && item.calculatedArea && (
+          <View style={styles.calculatedArea}>
+            <Text style={styles.calculatedAreaText}>
+              Total Area: {item.calculatedArea.toFixed(2)} ft²
+            </Text>
+          </View>
+        )}
+
+        {errors[index] && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={16} color="#EF4444" />
+            <Text style={styles.errorText}>{errors[index]}</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   return (
-    <View style={styles.stepContainer}>
+    <ScrollView 
+      style={styles.scrollView}
+      contentContainerStyle={styles.stepContainer}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.section}>
-        <Text style={styles.title}>Measurements</Text>
-        <Text style={styles.subtitle}>Measure the area(s) to be insulated</Text>
+        <Text style={styles.title}>List your billable items</Text>
+        <Text style={styles.subtitle}>Add items for your quote</Text>
+      </View>
+
+      {items.map((item, index) => renderItemFields(item, index))}
+
+      <TouchableOpacity style={styles.addItemButton} onPress={addItem}>
+        <Ionicons name="add-circle-outline" size={24} color="#7cd35c" />
+        <Text style={styles.addItemText}>+ Add Another Item</Text>
+      </TouchableOpacity>
+
+      <View style={styles.itemsCounter}>
+        <Text style={styles.itemsCounterText}>
+          Total billable items: <Text style={styles.itemsCounterNumber}>{items.length}</Text>
+        </Text>
       </View>
 
       <TouchableOpacity
-        style={styles.nextButton}
-        onPress={() => onNext({ measurements: [] })}
+        style={[styles.nextButton, items.length === 0 && styles.nextButtonDisabled]}
+        onPress={handleNext}
+        disabled={items.length === 0}
       >
         <Text style={styles.nextButtonText}>Next: Add Costs</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 function StepCosts({ data, onNext }: { data: any; onNext: (data: any) => void }) {
+  const { settings } = useSettings();
+  
+  // Initialize items from previous page - automatically include all items
+  const [items, setItems] = useState(
+    (data.items || []).map((item: any) => ({
+      ...item,
+      costPerUnit: item.costPerUnit || 0, // Cost per quantity/area
+      price: item.price || 0, // Total calculated price
+      priceOption: item.priceOption || '',
+    }))
+  );
+
+  // Get price options from user's materials library (settings)
+  // Default materials if none exist
+  const defaultMaterials = [
+    { id: '1', name: 'Fiberglass Batt', cost_per_sqft: 1.25 },
+    { id: '2', name: 'Spray Foam', cost_per_sqft: 3.50 },
+    { id: '3', name: 'Cellulose', cost_per_sqft: 0.85 },
+  ];
+  
+  // This would come from settings in the future - for now use defaults
+  const materials = defaultMaterials;
+  
+  const priceOptions = [
+    ...materials.map(material => ({
+      label: `${material.name} $${material.cost_per_sqft}/sqft`,
+      value: material.cost_per_sqft,
+      unit: 'sqft',
+    })),
+    { label: 'Installation rate $50/hour', value: 50, unit: 'hour' },
+    { label: 'Custom...', value: 'custom' },
+  ];
+
+  const [selectedPriceIndex, setSelectedPriceIndex] = useState<Record<number, number>>({});
+  const [customPrices, setCustomPrices] = useState<Record<number, number>>({});
+  const [showCustomInput, setShowCustomInput] = useState<Record<number, boolean>>({});
+  const [expandedDropdowns, setExpandedDropdowns] = useState<Record<number, boolean>>({});
+  const [showDirectInput, setShowDirectInput] = useState<Record<number, boolean>>({});
+
+  const getItemDisplayName = (item: any) => {
+    let suffix = '';
+    if (item.type === 'Room' && item.calculatedArea) {
+      suffix = ` (${item.calculatedArea.toFixed(2)} ft²)`;
+    } else if (item.quantity) {
+      const unit = item.type === 'Labor' ? 'hours' : 'units';
+      suffix = ` (${item.quantity} ${unit})`;
+    }
+    return `${item.name}${suffix}`;
+  };
+
+  const updateItemPrice = (index: number, priceIndex: number) => {
+    const option = priceOptions[priceIndex];
+    const item = items[index];
+    
+    if (option.value === 'custom') {
+      setShowCustomInput({ ...showCustomInput, [index]: true });
+      setShowDirectInput({ ...showDirectInput, [index]: false });
+      setSelectedPriceIndex({ ...selectedPriceIndex, [index]: priceIndex });
+    } else {
+      const costPerUnit = option.value;
+      let calculatedPrice = 0;
+      
+      if (option.unit === 'sqft' && item.calculatedArea) {
+        calculatedPrice = item.calculatedArea * costPerUnit;
+      } else if (option.unit === 'hour' || option.unit === 'unit') {
+        calculatedPrice = (item.quantity || 1) * costPerUnit;
+      } else {
+        calculatedPrice = costPerUnit;
+      }
+      
+      const updated = [...items];
+      updated[index] = {
+        ...updated[index],
+        costPerUnit: costPerUnit,
+        price: calculatedPrice,
+        priceOption: option.label,
+      };
+      setItems(updated);
+      setSelectedPriceIndex({ ...selectedPriceIndex, [index]: priceIndex });
+      setShowCustomInput({ ...showCustomInput, [index]: false });
+      setShowDirectInput({ ...showDirectInput, [index]: false });
+    }
+  };
+
+  const updateCustomPrice = (index: number, customPrice: number) => {
+    const item = items[index];
+    let calculatedPrice = customPrice;
+    
+    // If it's a room, multiply by area; if it has quantity, multiply by quantity
+    if (item.type === 'Room' && item.calculatedArea) {
+      calculatedPrice = customPrice * item.calculatedArea;
+    } else if (item.quantity) {
+      calculatedPrice = customPrice * item.quantity;
+    }
+    
+    const updated = [...items];
+    updated[index] = {
+      ...updated[index],
+      costPerUnit: customPrice,
+      price: calculatedPrice,
+      priceOption: `Custom: $${customPrice.toFixed(2)}/${item.type === 'Room' ? 'sqft' : 'unit'}`,
+    };
+    setItems(updated);
+    setCustomPrices({ ...customPrices, [index]: customPrice });
+    setShowDirectInput({ ...showDirectInput, [index]: false });
+  };
+
+  const updateDirectCost = (index: number, costPerUnit: number) => {
+    const item = items[index];
+    let calculatedPrice = costPerUnit;
+    
+    // If it's a room, multiply by area; if it has quantity, multiply by quantity
+    if (item.type === 'Room' && item.calculatedArea) {
+      calculatedPrice = costPerUnit * item.calculatedArea;
+    } else if (item.quantity) {
+      calculatedPrice = costPerUnit * item.quantity;
+    } else {
+      calculatedPrice = costPerUnit;
+    }
+    
+    const updated = [...items];
+    updated[index] = {
+      ...updated[index],
+      costPerUnit: costPerUnit,
+      price: calculatedPrice,
+      priceOption: `Manual: $${costPerUnit.toFixed(2)}/${item.type === 'Room' ? 'sqft' : item.quantity ? 'unit' : 'item'}`,
+    };
+    setItems(updated);
+  };
+
+  const total = items.reduce((sum, item) => sum + (item.price || 0), 0);
+
+  const handleNext = () => {
+    // Validate all items have prices
+    const itemsWithoutPrice = items.filter(item => !item.price || item.price <= 0);
+    if (itemsWithoutPrice.length > 0) {
+      Alert.alert('Missing Prices', 'Please assign a price to all items.');
+      return;
+    }
+    onNext({ items });
+  };
+
   return (
-    <View style={styles.stepContainer}>
+    <ScrollView 
+      style={styles.scrollView}
+      contentContainerStyle={styles.stepContainer}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.section}>
-        <Text style={styles.title}>Costs & Materials</Text>
-        <Text style={styles.subtitle}>Select materials and calculate costs</Text>
+        <Text style={styles.title}>Assign your costs</Text>
+        <Text style={styles.subtitle}>Assign prices to each item</Text>
+      </View>
+
+      <View style={styles.costItemsContainer}>
+        {items.map((item, index) => (
+          <View key={index} style={styles.costItemRow}>
+            <View style={styles.costItemName}>
+              <Text style={styles.costItemNameText}>{getItemDisplayName(item)}</Text>
+            </View>
+            
+            <View style={styles.priceSelectorContainer}>
+              {/* Direct Cost Input - Always visible */}
+              <View style={styles.directCostInput}>
+                <Text style={styles.directCostLabel}>
+                  Cost per {item.type === 'Room' ? 'sqft' : item.quantity ? 'unit' : 'item'}:
+                </Text>
+                <TextInput
+                  style={styles.directCostField}
+                  placeholder="0.00"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="decimal-pad"
+                  value={item.costPerUnit > 0 ? item.costPerUnit.toString() : ''}
+                  onChangeText={(text) => {
+                    const value = parseFloat(text) || 0;
+                    updateDirectCost(index, value);
+                  }}
+                />
+              </View>
+
+              {/* Or use preset dropdown */}
+              <View style={styles.orDivider}>
+                <View style={styles.orDividerLine} />
+                <Text style={styles.orDividerText}>OR</Text>
+                <View style={styles.orDividerLine} />
+              </View>
+
+              <TouchableOpacity
+                style={styles.priceDropdown}
+                onPress={() => setExpandedDropdowns({
+                  ...expandedDropdowns,
+                  [index]: !expandedDropdowns[index]
+                })}
+              >
+                <Text style={styles.priceDropdownText}>
+                  {item.priceOption || 'Select from presets'}
+                </Text>
+                <Ionicons 
+                  name={expandedDropdowns[index] ? "chevron-up" : "chevron-down"} 
+                  size={20} 
+                  color="#6B7280" 
+                />
+              </TouchableOpacity>
+              
+              {expandedDropdowns[index] && (
+                <View style={styles.priceOptionsList}>
+                  {priceOptions.map((option, optIndex) => (
+                    <TouchableOpacity
+                      key={optIndex}
+                      style={[
+                        styles.priceOption,
+                        selectedPriceIndex[index] === optIndex && styles.priceOptionSelected
+                      ]}
+                      onPress={() => {
+                        updateItemPrice(index, optIndex);
+                        setExpandedDropdowns({ ...expandedDropdowns, [index]: false });
+                      }}
+                    >
+                      <Text style={styles.priceOptionText}>{option.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              
+              {showCustomInput[index] && (
+                <View style={styles.customPriceInput}>
+                  <TextInput
+                    style={styles.customPriceField}
+                    placeholder="Enter price per unit"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="decimal-pad"
+                    value={customPrices[index]?.toString() || ''}
+                    onChangeText={(text) => updateCustomPrice(index, parseFloat(text) || 0)}
+                  />
+                </View>
+              )}
+              
+              {item.price > 0 && (
+                <View style={styles.itemPriceDisplay}>
+                  <Text style={styles.itemPriceLabel}>Total:</Text>
+                  <Text style={styles.itemPriceText}>${item.price.toFixed(2)}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.totalDisplay}>
+        <Text style={styles.totalLabel}>Total:</Text>
+        <Text style={styles.totalAmount}>${total.toFixed(2)}</Text>
       </View>
 
       <TouchableOpacity
         style={styles.nextButton}
-        onPress={() => onNext({})}
+        onPress={handleNext}
       >
         <Text style={styles.nextButtonText}>Next: Review Quote</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 function StepSummary({ data, onSave }: { data: any; onSave: () => Promise<void> }) {
   const [saving, setSaving] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const { settings } = useSettings();
 
-  // Calculate totals
-  const totalSquareFootage = data.measurements.reduce((sum: number, m: any) => {
-    return sum + (m.length * m.width);
+  // Calculate totals from items
+  const totalCost = (data.items || []).reduce((sum: number, item: any) => {
+    return sum + (item.price || 0);
   }, 0);
 
-  const materialCost = totalSquareFootage * (data.material_cost_per_sqft || 0);
-  const laborCost = totalSquareFootage * (data.labor_cost_per_sqft || 0);
-  const additionalCostsTotal = data.additional_costs.reduce((sum: number, cost: any) => sum + (cost.amount || 0), 0);
-  const subtotal = materialCost + laborCost + additionalCostsTotal;
-  const rebateAmount = data.postal_code ? subtotal * 0.15 : 0; // 15% rebate mock
-  const finalTotal = subtotal - rebateAmount;
+  const totalSquareFootage = (data.items || [])
+    .filter((item: any) => item.type === 'Room')
+    .reduce((sum: number, item: any) => sum + (item.calculatedArea || 0), 0);
+
+  const rebateAmount = data.postal_code ? totalCost * 0.15 : 0; // 15% rebate mock
+  const taxRate = 0.08; // 8% tax
+  const taxAmount = (totalCost - rebateAmount) * taxRate;
+  const shippingHandling = 0; // Can be added later
+  const finalTotal = totalCost - rebateAmount + taxAmount + shippingHandling;
 
   const handleSave = async () => {
     if (!data.client_name || !data.project_name) {
@@ -529,35 +1038,302 @@ function StepSummary({ data, onSave }: { data: any; onSave: () => Promise<void> 
     }
   };
 
+  const generateInvoiceHTML = () => {
+    const date = new Date().toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit' 
+    });
+    const invoiceNumber = `#${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
+    
+    const companyName = settings.profile.company || 'Your Company Name';
+    const companyAddress = 'Your Address'; // Address field can be added to settings later
+    const companyPhone = settings.profile.phone || 'Your Phone';
+    const companyEmail = settings.profile.email || 'Your Email';
+
+    const itemsHTML = (data.items || []).map((item: any, index: number) => {
+      // Get quantity and unit based on item type
+      let qty = '1';
+      let unit = '';
+      
+      if (item.type === 'Room' && item.calculatedArea) {
+        qty = item.calculatedArea.toFixed(2);
+        unit = 'sqft';
+      } else if (item.quantity) {
+        qty = item.quantity.toString();
+        unit = item.type === 'Labor' ? 'hours' : 'units';
+      }
+      
+      // Use costPerUnit if available, otherwise calculate from price
+      const unitPrice = item.costPerUnit ? item.costPerUnit.toFixed(2) : 
+        (item.type === 'Room' && item.calculatedArea 
+          ? (item.price / (item.calculatedArea || 1)).toFixed(2)
+          : (item.price / (item.quantity || 1)).toFixed(2));
+      const total = item.price.toFixed(2);
+      
+      return `
+        <tr>
+          <td style="padding: 12px; border-bottom: 1px solid #E5E7EB;">${item.name || 'Item ' + (index + 1)}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #E5E7EB; text-align: center;">${qty}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #E5E7EB; text-align: right;">$ ${unitPrice}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #E5E7EB; text-align: right;">$ ${total}</td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; color: #2D3748; padding: 20px; }
+            .header { background-color: #7cd35c; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
+            .logo-placeholder { width: 60px; height: 60px; background-color: #9CA3AF; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; color: white; }
+            .invoice-title { font-size: 32px; font-weight: bold; }
+            .invoice-number { font-size: 16px; margin-top: 5px; }
+            .date { text-align: right; margin: 15px 0; }
+            .payment-terms { text-align: center; margin: 10px 0; color: #6B7280; font-size: 14px; }
+            .info-section { display: flex; justify-content: space-between; margin: 20px 0; }
+            .info-column { flex: 1; }
+            .info-heading { color: #7cd35c; font-weight: bold; margin-bottom: 10px; font-size: 14px; }
+            .info-text { margin: 5px 0; color: #2D3748; }
+            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+            th { background-color: #7cd35c; color: white; padding: 12px; text-align: left; font-weight: bold; }
+            th:last-child, td:last-child { text-align: right; }
+            th:nth-child(2), td:nth-child(2) { text-align: center; }
+            td { padding: 12px; border-bottom: 1px solid #E5E7EB; }
+            .summary { text-align: right; margin-top: 20px; }
+            .summary-row { margin: 8px 0; display: flex; justify-content: flex-end; }
+            .summary-label { width: 200px; text-align: right; padding-right: 20px; }
+            .summary-value { width: 120px; text-align: right; }
+            .total-row { background-color: #7cd35c; color: white; padding: 15px 0; font-weight: bold; font-size: 18px; margin-top: 10px; }
+            .total-row .summary-label, .total-row .summary-value { color: white; }
+            .remarks { margin: 30px 0; }
+            .remarks-title { font-weight: bold; margin-bottom: 10px; }
+            .payment-methods { margin: 20px 0; color: #6B7280; font-size: 14px; }
+            .signature { text-align: center; margin: 40px 0; padding-top: 40px; border-top: 1px solid #E5E7EB; }
+            .thank-you { text-align: center; font-weight: bold; font-style: italic; font-size: 18px; margin-top: 30px; color: #7cd35c; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="logo-placeholder">LOGO</div>
+            <div>
+              <div class="invoice-title">INVOICE</div>
+              <div class="invoice-number">${invoiceNumber}</div>
+            </div>
+          </div>
+          
+          <div class="date">
+            <strong>DATE:</strong> ${date}
+          </div>
+          
+          <div class="payment-terms">
+            Payment terms (due on receipt, due in 30 days)
+          </div>
+          
+          <div class="info-section">
+            <div class="info-column">
+              <div class="info-heading">COMPANY NAME</div>
+              <div class="info-text">${companyName}</div>
+              <div class="info-text">${companyAddress}</div>
+              <div class="info-text">${companyPhone}</div>
+              <div class="info-text">${companyEmail}</div>
+            </div>
+            <div class="info-column">
+              <div class="info-heading">BILL TO</div>
+              <div class="info-text">${data.client_name || 'Client Name'}</div>
+              <div class="info-text">${data.project_name || 'Project Name'}</div>
+              <div class="info-text">${data.project_address || 'Address'}</div>
+              <div class="info-text">${data.client_phone || 'Phone'}</div>
+            </div>
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>DESCRIPTION</th>
+                <th>QTY</th>
+                <th>UNIT PRICE</th>
+                <th>TOTAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHTML}
+            </tbody>
+          </table>
+          
+          <div class="summary">
+            <div class="summary-row">
+              <div class="summary-label">SUBTOTAL:</div>
+              <div class="summary-value">$ ${totalCost.toFixed(2)}</div>
+            </div>
+            ${rebateAmount > 0 ? `
+            <div class="summary-row">
+              <div class="summary-label">DISCOUNT:</div>
+              <div class="summary-value">$ ${rebateAmount.toFixed(2)}</div>
+            </div>
+            <div class="summary-row">
+              <div class="summary-label">SUBTOTAL LESS DISCOUNT:</div>
+              <div class="summary-value">$ ${(totalCost - rebateAmount).toFixed(2)}</div>
+            </div>
+            ` : ''}
+            <div class="summary-row">
+              <div class="summary-label">TAX RATE:</div>
+              <div class="summary-value">${(taxRate * 100).toFixed(0)}%</div>
+            </div>
+            <div class="summary-row">
+              <div class="summary-label">TOTAL TAX:</div>
+              <div class="summary-value">$ ${taxAmount.toFixed(2)}</div>
+            </div>
+            ${shippingHandling > 0 ? `
+            <div class="summary-row">
+              <div class="summary-label">SHIPPING/HANDLING:</div>
+              <div class="summary-value">$ ${shippingHandling.toFixed(2)}</div>
+            </div>
+            ` : ''}
+            <div class="summary-row total-row">
+              <div class="summary-label">INVOICE TOTAL</div>
+              <div class="summary-value">$ ${finalTotal.toFixed(2)}</div>
+            </div>
+          </div>
+          
+          <div class="remarks">
+            <div class="remarks-title">Remarks / Payment Instructions:</div>
+            <div style="margin-top: 10px; min-height: 50px;">${data.notes || ''}</div>
+          </div>
+          
+          <div class="payment-methods">
+            Make all checks payable to ${companyName}. Or submit payment via Venmo: <venmo account> or PayPal: <paypal account>
+          </div>
+          
+          <div class="signature">
+            Client Signature X
+          </div>
+          
+          <div class="thank-you">
+            Thank you for your business!
+          </div>
+        </body>
+      </html>
+    `;
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      setGeneratingPdf(true);
+      const html = generateInvoiceHTML();
+      
+      const { uri } = await Print.printToFileAsync({ html });
+      
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri);
+        Alert.alert('Success', 'PDF generated and ready to share!');
+      } else {
+        Alert.alert('Success', `PDF saved to: ${uri}`);
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      Alert.alert('Error', 'Failed to generate PDF. Please try again.');
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const handleShareQuote = async () => {
+    try {
+      const shareMessage = `Quote for ${data.client_name || 'Client'}\n` +
+        `Project: ${data.project_name || 'Project'}\n` +
+        `Total: $${finalTotal.toFixed(2)}\n\n` +
+        `View full quote details in the Retrofit app.`;
+
+      if (await Sharing.isAvailableAsync()) {
+        // For sharing text, we can use the native share sheet
+        // Since Sharing.shareAsync requires a file URI, we'll generate a simple text file
+        const html = `<html><body><p>${shareMessage.replace(/\n/g, '<br>')}</p></body></html>`;
+        const { uri } = await Print.printToFileAsync({ html });
+        await Sharing.shareAsync(uri);
+      } else {
+        Alert.alert('Sharing not available', 'Sharing is not available on this device.');
+      }
+    } catch (error: any) {
+      if (error.message && !error.message.includes('User did not share')) {
+        Alert.alert('Error', 'Failed to share quote. Please try again.');
+      }
+    }
+  };
+
   return (
-    <View style={styles.stepContainer}>
+    <ScrollView 
+      style={styles.scrollView}
+      contentContainerStyle={styles.stepContainer}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.section}>
         <Text style={styles.title}>Quote Summary</Text>
         <Text style={styles.subtitle}>Review your quote details</Text>
       </View>
 
       <View style={styles.summaryCard}>
+        <View style={styles.summaryHeader}>
+          <Text style={styles.summaryHeaderText}>Client Information</Text>
+        </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Client:</Text>
           <Text style={styles.summaryValue}>{data.client_name}</Text>
         </View>
+        {data.project_name && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Project:</Text>
+            <Text style={styles.summaryValue}>{data.project_name}</Text>
+          </View>
+        )}
         {data.project_address && (
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Address:</Text>
             <Text style={styles.summaryValue}>{data.project_address}</Text>
           </View>
         )}
+        {data.postal_code && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Postal Code:</Text>
+            <Text style={styles.summaryValue}>{data.postal_code}</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryHeader}>
+          <Text style={styles.summaryHeaderText}>Project Details</Text>
+        </View>
+        {totalSquareFootage > 0 && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Total Area:</Text>
+            <Text style={styles.summaryValue}>{totalSquareFootage.toFixed(2)} sqft</Text>
+          </View>
+        )}
         <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Total Area:</Text>
-          <Text style={styles.summaryValue}>{totalSquareFootage.toFixed(2)} sqft</Text>
+          <Text style={styles.summaryLabel}>Items:</Text>
+          <Text style={styles.summaryValue}>{(data.items || []).length}</Text>
+        </View>
+        {(data.items || []).map((item: any, index: number) => (
+          <View key={index} style={styles.itemSummaryRow}>
+            <Text style={styles.itemSummaryText}>
+              • {item.name} - ${item.price.toFixed(2)}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryHeader}>
+          <Text style={styles.summaryHeaderText}>Cost Breakdown</Text>
         </View>
         <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Material Cost:</Text>
-          <Text style={styles.summaryValue}>${materialCost.toFixed(2)}</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Labor Cost:</Text>
-          <Text style={styles.summaryValue}>${laborCost.toFixed(2)}</Text>
+          <Text style={styles.summaryLabel}>Subtotal:</Text>
+          <Text style={styles.summaryValue}>${totalCost.toFixed(2)}</Text>
         </View>
         {rebateAmount > 0 && (
           <View style={styles.summaryRow}>
@@ -565,6 +1341,10 @@ function StepSummary({ data, onSave }: { data: any; onSave: () => Promise<void> 
             <Text style={[styles.summaryValue, { color: '#7cd35c' }]}>-${rebateAmount.toFixed(2)}</Text>
           </View>
         )}
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Tax (8%):</Text>
+          <Text style={styles.summaryValue}>${taxAmount.toFixed(2)}</Text>
+        </View>
         <View style={[styles.summaryRow, styles.totalRow]}>
           <Text style={styles.totalLabel}>Total:</Text>
           <Text style={styles.totalValue}>${finalTotal.toFixed(2)}</Text>
@@ -582,7 +1362,30 @@ function StepSummary({ data, onSave }: { data: any; onSave: () => Promise<void> 
           <Text style={styles.nextButtonText}>Save Quote</Text>
         )}
       </TouchableOpacity>
-    </View>
+
+      <TouchableOpacity
+        style={[styles.secondaryButton, generatingPdf && styles.secondaryButtonDisabled]}
+        onPress={handleDownloadPDF}
+        disabled={generatingPdf}
+      >
+        {generatingPdf ? (
+          <ActivityIndicator color="#7cd35c" />
+        ) : (
+          <>
+            <Ionicons name="download-outline" size={20} color="#7cd35c" />
+            <Text style={styles.secondaryButtonText}>Download as PDF</Text>
+          </>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.secondaryButton}
+        onPress={handleShareQuote}
+      >
+        <Ionicons name="share-outline" size={20} color="#7cd35c" />
+        <Text style={styles.secondaryButtonText}>Share Quote</Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 
@@ -621,8 +1424,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  scrollView: {
+    flex: 1,
+  },
   stepContainer: {
-    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   stepCircle: {
     width: 32,
@@ -821,5 +1628,339 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  itemCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  itemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  itemNumber: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2D3748',
+  },
+  dropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 56,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#1F2937',
+  },
+  dropdownOptions: {
+    marginTop: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  dropdownOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  dropdownOptionText: {
+    fontSize: 16,
+    color: '#2D3748',
+  },
+  dropdownOptionSelected: {
+    backgroundColor: '#F0FDF4',
+  },
+  priceOptionSelected: {
+    backgroundColor: '#F0FDF4',
+  },
+  dimensionsRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  calculatedArea: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  calculatedAreaText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#7cd35c',
+  },
+  addItemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#7cd35c',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    height: 56,
+    marginBottom: 16,
+    gap: 8,
+  },
+  addItemText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#7cd35c',
+  },
+  itemsCounter: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  itemsCounterText: {
+    fontSize: 16,
+    color: '#6B7280',
+  },
+  itemsCounterNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#7cd35c',
+  },
+  costItemsContainer: {
+    marginBottom: 24,
+  },
+  costItemRow: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  costItemName: {
+    marginBottom: 12,
+  },
+  costItemNameText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2D3748',
+  },
+  priceSelectorContainer: {
+    marginTop: 8,
+  },
+  directCostInput: {
+    marginBottom: 12,
+  },
+  directCostLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  directCostField: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    backgroundColor: '#FFFFFF',
+    color: '#1F2937',
+  },
+  orDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 12,
+  },
+  orDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  orDividerText: {
+    marginHorizontal: 12,
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '600',
+  },
+  priceDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 56,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+  },
+  priceDropdownText: {
+    fontSize: 16,
+    color: '#1F2937',
+    flex: 1,
+  },
+  priceOptionsList: {
+    marginTop: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  priceOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  priceOptionText: {
+    fontSize: 16,
+    color: '#2D3748',
+  },
+  customPriceInput: {
+    marginTop: 12,
+  },
+  customPriceField: {
+    height: 56,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    backgroundColor: '#FFFFFF',
+    color: '#1F2937',
+  },
+  itemPriceDisplay: {
+    marginTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  itemPriceLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  itemPriceText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#7cd35c',
+  },
+  totalDisplay: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  totalLabel: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2D3748',
+  },
+  totalAmount: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#7cd35c',
+  },
+  summaryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  summaryHeader: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    paddingBottom: 12,
+    marginBottom: 16,
+  },
+  summaryHeaderText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2D3748',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  summaryLabel: {
+    fontSize: 16,
+    color: '#6B7280',
+    flex: 1,
+  },
+  summaryValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2D3748',
+    flex: 1,
+    textAlign: 'right',
+  },
+  itemSummaryRow: {
+    marginBottom: 8,
+    paddingLeft: 8,
+  },
+  itemSummaryText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  totalRow: {
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingTop: 16,
+    marginTop: 8,
+    marginBottom: 0,
+  },
+  totalLabel: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2D3748',
+  },
+  totalValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#7cd35c',
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#7cd35c',
+    borderRadius: 8,
+    height: 56,
+    marginTop: 12,
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  secondaryButtonDisabled: {
+    opacity: 0.6,
+  },
+  secondaryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#7cd35c',
   },
 });
